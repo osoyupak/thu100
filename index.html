@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
     <meta charset="utf-8" />
-    <title>Öğrenci Haritası (gviz JSON)</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Öğrenci Bina Durum Haritası</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -19,96 +19,302 @@
             height: 100%;
         }
 
+        /* Üstte küçük bir bilgi paneli */
+        .hud {
+            position: absolute;
+            z-index: 1000;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.9);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,.1);
+            font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        }
+
+            .hud b {
+                font-weight: 600;
+            }
+
+            .hud .row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                margin-top: 6px;
+            }
+
+        .legend {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            border: 1px solid #0002;
+        }
+
+            .dot.good {
+                background: #2ecc71;
+            }
+
+            .dot.medium {
+                background: #f39c12;
+            }
+
+            .dot.bad {
+                background: #e74c3c;
+            }
+
+            .dot.urgent {
+                background: #7d1935;
+            }
+
         .leaflet-popup-content img {
-            max-width: 200px;
+            max-width: 220px;
             height: auto;
             display: block;
             margin-top: 8px;
+            border-radius: 6px;
+            box-shadow: 0 1px 6px rgba(0,0,0,.15);
         }
+
+        .btn {
+            appearance: none;
+            border: 1px solid #0002;
+            background: #fff;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+            .btn:hover {
+                background: #f7f7f7;
+            }
     </style>
 </head>
 <body>
     <div id="map"></div>
 
+    <div class="hud">
+        <div><b>Öğrenci Bina Durum Haritası</b></div>
+        <div class="legend">
+            <span class="dot good"></span> İyi
+            <span class="dot medium"></span> Orta
+            <span class="dot bad"></span> Kötü
+            <span class="dot urgent"></span> Acil
+        </div>
+        <div class="row">
+            <button class="btn" id="refreshBtn">Yenile</button>
+            <span id="status">Hazır</span>
+        </div>
+    </div>
+
     <script>
-        // Haritayı başlat
-        const map = L.map('map').setView([41.0082, 28.9784], 12);
+        /****************** 1) AYARLARINI DOLDUR ******************/
+        // Google Sheet: /d/ ile /edit arasındaki uzun ID (2PACX ile başlayan değil!)
+        const SPREADSHEET_ID = "14cMuaO4ir4RwBLjKJG4yJCE4YJNTQ4oNKaXSdy8uATc"; // Örn: 1AbCDeFgHIJKLmnoP2q3r_sTuvWXyZ-1234567890
+        // Sheet sekmesinin gid'i (URL sonunda #gid=... yazar)
+        const GID = "182343725";
+
+        // Başlangıç merkezi (İstanbul) ve zoom
+        const START_CENTER = [41.0082, 28.9784];
+        const START_ZOOM = 12;
+
+        /****************** 2) HARİTA ******************/
+        const map = L.map('map').setView(START_CENTER, START_ZOOM);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // Sheet bilgileri (senin değerlerini buraya koy)
-        const SPREADSHEET_ID = "14cMuaO4ir4RwBLjKJG4yJCE4YJNTQ4oNKaXSdy8uATc";   // /d/ ile /edit arasındaki uzun ID
-        const GID = "182343725";                    // senin sheet sayfa kimliği
+        const statusEl = document.getElementById('status');
+        const refreshBtn = document.getElementById('refreshBtn');
 
-        // gviz JSON endpoint
-        const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${GID}`;
+        /****************** 3) YARDIMCI FONKSİYONLAR ******************/
+        const norm = s => (s ?? "").toString().trim().toLowerCase();
 
-        // JSON parse helper
-        function parseGViz(rawText) {
-            // Çıktı: google.visualization.Query.setResponse({...});
-            const jsonText = rawText.substring(rawText.indexOf("{"), rawText.lastIndexOf("}") + 1);
-            return JSON.parse(jsonText);
+        function normalizeDriveUrl(url) {
+            if (!url) return "";
+            // .../file/d/FILE_ID/...
+            let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+            if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+            // ...?id=FILE_ID
+            m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+            return url;
+        }
+        function isDriveFolderLink(url) {
+            return /drive\.google\.com\/drive\/folders\//.test(url || "");
         }
 
-        // Veriyi çek
-        fetch(url)
-            .then(res => res.text())
-            .then(txt => {
-                const data = parseGViz(txt);
-                const rows = data.table.rows;
-                const headers = data.table.cols.map(c => c.label);
+        // Kondisyona göre renk (daire marker için)
+        function conditionStyle(k) {
+            const v = norm(k);
+            if (v.startsWith("acil")) return { color: "#7d1935", fillColor: "#7d1935" };
+            if (v.startsWith("köt") || v.startsWith("kot")) return { color: "#e74c3c", fillColor: "#e74c3c" };
+            if (v.startsWith("ort")) return { color: "#f39c12", fillColor: "#f39c12" };
+            if (v.startsWith("iyi") || v.startsWith("good")) return { color: "#2ecc71", fillColor: "#2ecc71" };
+            // İngilizce olasılıkları
+            if (v.startsWith("urgent")) return { color: "#7d1935", fillColor: "#7d1935" };
+            if (v.startsWith("bad") || v.startsWith("poor")) return { color: "#e74c3c", fillColor: "#e74c3c" };
+            if (v.startsWith("medium") || v.startsWith("fair")) return { color: "#f39c12", fillColor: "#f39c12" };
+            return { color: "#3388ff", fillColor: "#3388ff" };
+        }
 
-                console.log("Başlıklar:", headers);
+        // Esnek başlık eşleştirme
+        const COLS = {
+            bina: ["bina adı", "bina_adi", "bina", "ad", "isim", "name", "building", "building name"],
+            kosul: ["kondisyon", "durum", "condition", "status"],
+            not: ["notlar", "açıklama", "aciklama", "notes", "description"],
+            foto: ["fotoğraf linki", "fotograf linki", "foto", "fotoğraf", "image", "photo", "photo url", "image url"],
+            konum: ["konum (lat,lng)", "konum", "koordinat", "lat,lng", "location", "coordinates", "latlon", "lat,lon"]
+        };
+        function findColIndex(headers, candidates) {
+            for (const c of candidates) {
+                const i = headers.findIndex(h => norm(h) === norm(c));
+                if (i !== -1) return i;
+            }
+            return -1;
+        }
 
-                // sütun indexleri
-                const iBina = headers.findIndex(h => h.toLowerCase().includes("bina"));
-                const iKosul = headers.findIndex(h => h.toLowerCase().includes("kond"));
-                const iNot = headers.findIndex(h => h.toLowerCase().includes("not"));
-                const iFoto = headers.findIndex(h => h.toLowerCase().includes("foto"));
-                const iKonum = headers.findIndex(h => h.toLowerCase().includes("konum"));
+        /****************** 4) SHEET'TEN VERİYİ ÇEK ******************/
+        // gviz endpoint (paylaşım: Bağlantıya sahip olan - Görüntüleyici olmalı!)
+        const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${GID}`;
+
+        function parseGViz(raw) {
+            const start = raw.indexOf("{");
+            const end = raw.lastIndexOf("}");
+            if (start === -1 || end === -1) {
+                // ACCESS_DENIED vb. metinler döndüğünde böyle olur
+                throw new Error("GViz JSON bulunamadı. Sheet paylaşımı kapalı olabilir.");
+            }
+            return JSON.parse(raw.substring(start, end + 1));
+        }
+
+        let layerGroup = L.layerGroup().addTo(map); // tekrar yüklemede temizlemek için
+
+        async function loadData() {
+            try {
+                statusEl.textContent = "Yükleniyor...";
+                // Temizle
+                layerGroup.clearLayers();
+
+                // Veriyi çek
+                const res = await fetch(GVIZ_URL);
+                const text = await res.text();
+
+                // Hızlı teşhis için ilk 120 karakteri konsola yaz
+                console.log("GViz ilk 120:", text.slice(0, 120));
+
+                // ACCESS_DENIED ise kullanıcıya net uyarı
+                if (text.includes('"status":"error"') && text.includes('"access_denied"')) {
+                    throw new Error("Erişim reddedildi. Sheet paylaşımını 'Bağlantıya sahip olan: Görüntüleyici' yapın.");
+                }
+
+                const data = parseGViz(text);
+                const rows = data.table.rows || [];
+                const headers = (data.table.cols || []).map(c => c.label || "");
+                if (!rows.length) {
+                    alert("Sheet boş görünüyor veya satır bulunamadı.");
+                    statusEl.textContent = "Boş veri";
+                    return;
+                }
+
+                const idx = {
+                    bina: findColIndex(headers, COLS.bina),
+                    kosul: findColIndex(headers, COLS.kosul),
+                    not: findColIndex(headers, COLS.not),
+                    foto: findColIndex(headers, COLS.foto),
+                    konum: findColIndex(headers, COLS.konum)
+                };
+                if (idx.konum === -1) {
+                    alert("Konum sütunu bulunamadı. Bir sütunu 'Konum (Lat,Lng)' biçiminde adlandırın.");
+                    statusEl.textContent = "Hatalı başlık";
+                    return;
+                }
 
                 const bounds = L.latLngBounds([]);
                 let count = 0;
 
-                rows.forEach(r => {
-                    const get = i => (i >= 0 && r.c[i] ? r.c[i].v : "");
-                    const loc = get(iKonum);
+                // Hücre okuma yardımcı
+                const cell = (r, i) => {
+                    if (i < 0) return "";
+                    const c = r.c[i];
+                    // .v (ham), .f (formatlı) olabilir
+                    return (c && (c.f ?? c.v)) ? (c.f ?? c.v).toString() : "";
+                };
+
+                rows.forEach((r) => {
+                    const loc = cell(r, idx.konum);
                     if (!loc) return;
 
+                    // "lat, lng" bekleniyor
                     const parts = loc.split(",").map(s => s.trim());
                     if (parts.length < 2) return;
 
-                    const lat = parseFloat(parts[0].replace(",", "."));
-                    const lng = parseFloat(parts[1].replace(",", "."));
-                    if (isNaN(lat) || isNaN(lng)) return;
+                    const lat = parseFloat((parts[0] || "").replace(",", "."));
+                    const lng = parseFloat((parts[1] || "").replace(",", "."));
+                    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
 
-                    const bina = get(iBina);
-                    const kosul = get(iKosul);
-                    const note = get(iNot);
-                    let foto = get(iFoto);
+                    const bina = cell(r, idx.bina);
+                    const kosul = cell(r, idx.kosul);
+                    const note = cell(r, idx.not);
+                    let foto = cell(r, idx.foto);
 
-                    if (foto && foto.toLowerCase().includes("yok")) foto = "";
+                    // "foto yok" yazarsa gösterme
+                    if (norm(foto).includes("foto yok") || norm(foto) === "yok") foto = "";
 
-                    const html = `
-                <b>Bina:</b> ${bina}<br>
-                <b>Kondisyon:</b> ${kosul}<br>
-                <b>Notlar:</b> ${note}
-                ${foto ? `<img src="${foto}" alt="Fotoğraf">` : ""}
+                    let fotoHtml = "";
+                    if (foto) {
+                        if (isDriveFolderLink(foto)) {
+                            fotoHtml = `<div style="margin-top:8px"><a href="${foto}" target="_blank" rel="noopener">Klasördeki foto(lar)ı aç</a></div>`;
+                        } else {
+                            const imgUrl = normalizeDriveUrl(foto);
+                            fotoHtml = `<img src="${imgUrl}" alt="Fotoğraf">`;
+                        }
+                    }
+
+                    const popupHtml = `
+                <b>Bina:</b> ${bina || "-"}<br>
+                <b>Kondisyon:</b> ${kosul || "-"}<br>
+                <b>Notlar:</b> ${note || "-"}
+                ${fotoHtml}
               `;
 
-                    L.marker([lat, lng]).addTo(map).bindPopup(html);
+                    // Daire marker (renk kondisyona göre)
+                    const style = conditionStyle(kosul);
+                    const m = L.circleMarker([lat, lng], {
+                        radius: 7, weight: 1.5, color: style.color, fillColor: style.fillColor, fillOpacity: 0.85
+                    }).bindPopup(popupHtml);
+
+                    m.addTo(layerGroup);
                     bounds.extend([lat, lng]);
                     count++;
                 });
 
-                if (count > 0) map.fitBounds(bounds, { padding: [20, 20] });
-                else alert("Hiç geçerli konum bulunamadı.");
-            })
-            .catch(err => {
+                if (count > 0) {
+                    map.fitBounds(bounds, { padding: [24, 24] });
+                    statusEl.textContent = `${count} kayıt yüklendi`;
+                } else {
+                    statusEl.textContent = "Geçerli konum bulunamadı";
+                    alert("Veri geldi ama geçerli 'Konum (Lat,Lng)' satırı tespit edilemedi. Hücre biçimini kontrol edin.");
+                }
+            } catch (err) {
                 console.error(err);
-                alert("Sheet verisi alınamadı. Paylaşım ve ID ayarlarını kontrol et.");
-            });
+                statusEl.textContent = "Hata";
+                alert("Sheet verisi alınamadı: " + err.message);
+            }
+        }
+
+        refreshBtn.addEventListener('click', loadData);
+
+        // İlk yükleme
+        loadData();
     </script>
 </body>
 </html>
