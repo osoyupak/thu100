@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Öğrenci Haritası (gviz JSON)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+
+        #map {
+            height: 100%;
+        }
+
+        .leaflet-popup-content img {
+            max-width: 200px;
+            height: auto;
+            display: block;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script>
+        // Haritayı başlat
+        const map = L.map('map').setView([41.0082, 28.9784], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Sheet bilgileri (senin değerlerini buraya koy)
+        const SPREADSHEET_ID = "14cMuaO4ir4RwBLjKJG4yJCE4YJNTQ4oNKaXSdy8uATc";   // /d/ ile /edit arasındaki uzun ID
+        const GID = "182343725";                    // senin sheet sayfa kimliği
+
+        // gviz JSON endpoint
+        const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${GID}`;
+
+        // JSON parse helper
+        function parseGViz(rawText) {
+            // Çıktı: google.visualization.Query.setResponse({...});
+            const jsonText = rawText.substring(rawText.indexOf("{"), rawText.lastIndexOf("}") + 1);
+            return JSON.parse(jsonText);
+        }
+
+        // Veriyi çek
+        fetch(url)
+            .then(res => res.text())
+            .then(txt => {
+                const data = parseGViz(txt);
+                const rows = data.table.rows;
+                const headers = data.table.cols.map(c => c.label);
+
+                console.log("Başlıklar:", headers);
+
+                // sütun indexleri
+                const iBina = headers.findIndex(h => h.toLowerCase().includes("bina"));
+                const iKosul = headers.findIndex(h => h.toLowerCase().includes("kond"));
+                const iNot = headers.findIndex(h => h.toLowerCase().includes("not"));
+                const iFoto = headers.findIndex(h => h.toLowerCase().includes("foto"));
+                const iKonum = headers.findIndex(h => h.toLowerCase().includes("konum"));
+
+                const bounds = L.latLngBounds([]);
+                let count = 0;
+
+                rows.forEach(r => {
+                    const get = i => (i >= 0 && r.c[i] ? r.c[i].v : "");
+                    const loc = get(iKonum);
+                    if (!loc) return;
+
+                    const parts = loc.split(",").map(s => s.trim());
+                    if (parts.length < 2) return;
+
+                    const lat = parseFloat(parts[0].replace(",", "."));
+                    const lng = parseFloat(parts[1].replace(",", "."));
+                    if (isNaN(lat) || isNaN(lng)) return;
+
+                    const bina = get(iBina);
+                    const kosul = get(iKosul);
+                    const note = get(iNot);
+                    let foto = get(iFoto);
+
+                    if (foto && foto.toLowerCase().includes("yok")) foto = "";
+
+                    const html = `
+                <b>Bina:</b> ${bina}<br>
+                <b>Kondisyon:</b> ${kosul}<br>
+                <b>Notlar:</b> ${note}
+                ${foto ? `<img src="${foto}" alt="Fotoğraf">` : ""}
+              `;
+
+                    L.marker([lat, lng]).addTo(map).bindPopup(html);
+                    bounds.extend([lat, lng]);
+                    count++;
+                });
+
+                if (count > 0) map.fitBounds(bounds, { padding: [20, 20] });
+                else alert("Hiç geçerli konum bulunamadı.");
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Sheet verisi alınamadı. Paylaşım ve ID ayarlarını kontrol et.");
+            });
+    </script>
+</body>
+</html>
