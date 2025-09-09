@@ -1,320 +1,309 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="utf-8" />
-    <title>Öğrenci Bina Durum Haritası</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <title>Öğrenci Bina Durum Haritası</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Leaflet -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-    <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-        }
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
+    .hud {
+      position: absolute; z-index: 1000; top: 10px; left: 10px;
+      background: rgba(255,255,255,0.96); border-radius: 10px; padding: 10px 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.1); font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      max-width: 360px;
+    }
+    .hud b { font-weight: 600; }
+    .legend { display:flex; gap:10px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+    .chip { display:flex; align-items:center; gap:6px; }
+    .dot { width:12px; height:12px; border-radius:50%; border:1px solid #0002; display:inline-block; }
+    .good   { background:#2ecc71; }
+    .medium { background:#f39c12; }
+    .bad    { background:#e74c3c; }
+    .urgent { background:#7d1935; }
+    .row { display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+    .btn { appearance:none; border:1px solid #0002; background:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; }
+    .btn:hover { background:#f7f7f7; }
+    .muted { color:#666; }
 
-        #map {
-            height: 100%;
-        }
+    .leaflet-popup-content img {
+      max-width: 260px; height: auto; display:block; margin-top:8px; border-radius:6px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.15);
+    }
+    .small { font-size:12px; color:#666; }
 
-        /* Üstte küçük bir bilgi paneli */
-        .hud {
-            position: absolute;
-            z-index: 1000;
-            top: 10px;
-            left: 10px;
-            background: rgba(255,255,255,0.9);
-            border-radius: 10px;
-            padding: 10px 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,.1);
-            font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-        }
-
-            .hud b {
-                font-weight: 600;
-            }
-
-            .hud .row {
-                display: flex;
-                gap: 8px;
-                align-items: center;
-                margin-top: 6px;
-            }
-
-        .legend {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-top: 6px;
-            flex-wrap: wrap;
-        }
-
-        .dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            border: 1px solid #0002;
-        }
-
-            .dot.good {
-                background: #2ecc71;
-            }
-
-            .dot.medium {
-                background: #f39c12;
-            }
-
-            .dot.bad {
-                background: #e74c3c;
-            }
-
-            .dot.urgent {
-                background: #7d1935;
-            }
-
-        .leaflet-popup-content img {
-            max-width: 220px;
-            height: auto;
-            display: block;
-            margin-top: 8px;
-            border-radius: 6px;
-            box-shadow: 0 1px 6px rgba(0,0,0,.15);
-        }
-
-        .btn {
-            appearance: none;
-            border: 1px solid #0002;
-            background: #fff;
-            padding: 6px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-
-            .btn:hover {
-                background: #f7f7f7;
-            }
-    </style>
+    /* Popup boyutlarını kısıtla */
+  .leaflet-popup,
+  .leaflet-popup-content-wrapper {
+    max-width: min(90vw, 340px) !important;
+  }
+  .leaflet-popup-content {
+    width: min(86vw, 300px);
+    max-height: 60vh;           /* içerik çok uzarsa scroll */
+    overflow: auto;
+    margin: 8px 10px;           /* varsayılan boşluk */
+  }
+  .leaflet-popup-content img {
+    display: block;
+    width: 100%;                /* genişliği karta uydur */
+    max-width: 100%;
+    height: auto;
+    max-height: 40vh;           /* çok uzun görseli dikeyde kısıtla */
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.15);
+    margin-top: 8px;
+  }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
+  <div id="map"></div>
 
-    <div class="hud">
-        <div><b>Öğrenci Bina Durum Haritası</b></div>
-        <div class="legend">
-            <span class="dot good"></span> İyi
-            <span class="dot medium"></span> Orta
-            <span class="dot bad"></span> Kötü
-            <span class="dot urgent"></span> Acil
-        </div>
-        <div class="row">
-            <button class="btn" id="refreshBtn">Yenile</button>
-            <span id="status">Hazır</span>
-        </div>
+  <div class="hud">
+    <div><b>Öğrenci Bina Durum Haritası</b></div>
+    <div class="legend">
+      <span class="chip"><span class="dot good"></span> İyi</span>
+      <span class="chip"><span class="dot medium"></span> Orta</span>
+      <span class="chip"><span class="dot bad"></span> Kötü</span>
+      <span class="chip"><span class="dot urgent"></span> Acil</span>
     </div>
+    <div class="row">
+      <button class="btn" id="refreshBtn">Yenile</button>
+      <span id="status" class="muted">Hazır</span>
+    </div>
+  </div>
 
-    <script>
-        /****************** 1) AYARLARINI DOLDUR ******************/
-        // Google Sheet: /d/ ile /edit arasındaki uzun ID (2PACX ile başlayan değil!)
-        const SPREADSHEET_ID = "14cMuaO4ir4RwBLjKJG4yJCE4YJNTQ4oNKaXSdy8uATc"; // Örn: 1AbCDeFgHIJKLmnoP2q3r_sTuvWXyZ-1234567890
-        // Sheet sekmesinin gid'i (URL sonunda #gid=... yazar)
-        const GID = "182343725";
+  <script>
+    /*************** 0) AYARLARI DOLDUR ***************/
+    const SPREADSHEET_ID = "14cMuaO4ir4RwBLjKJG4yJCE4YJNTQ4oNKaXSdy8uATc";   // /d/ ... /edit arasındaki ID (2PACX değil)
+    const GID = "182343725";                              // URL’deki #gid=...
+    const FOLDER_API_URL = "https://script.google.com/macros/s/AKfycbymn1iNxvhm0kD-V2ZQVSY-6OsbcGYqaS27PzBpdU371CClLQ2udF70IxZDIZMtt-L2/exec"; // Apps Script Web App URL (…/exec) — klasör linki destekleyeceksen doldur.
 
-        // Başlangıç merkezi (İstanbul) ve zoom
-        const START_CENTER = [41.0082, 28.9784];
-        const START_ZOOM = 12;
+    // Harita başlangıcı (İstanbul)
+    const START_CENTER = [41.0082, 28.9784];
+    const START_ZOOM = 12;
 
-        /****************** 2) HARİTA ******************/
-        const map = L.map('map').setView(START_CENTER, START_ZOOM);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+    /*************** 1) HARİTA ***************/
+    const map = L.map('map').setView(START_CENTER, START_ZOOM);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
+    const layerGroup = L.layerGroup().addTo(map);
 
-        const statusEl = document.getElementById('status');
-        const refreshBtn = document.getElementById('refreshBtn');
+    const statusEl = document.getElementById('status');
+    const refreshBtn = document.getElementById('refreshBtn');
 
-        /****************** 3) YARDIMCI FONKSİYONLAR ******************/
-        const norm = s => (s ?? "").toString().trim().toLowerCase();
+    /*************** 2) YARDIMCILAR ***************/
+    const norm = s => (s ?? "").toString().trim().toLowerCase();
 
-        function normalizeDriveUrl(url) {
-            if (!url) return "";
-            // .../file/d/FILE_ID/...
-            let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-            if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-            // ...?id=FILE_ID
-            m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-            if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-            return url;
-        }
-        function isDriveFolderLink(url) {
-            return /drive\.google\.com\/drive\/folders\//.test(url || "");
-        }
+    function conditionStyle(k) {
+      const v = norm(k);
+      if (v.startsWith("acil") || v.startsWith("urgent")) return { color:"#7d1935", fillColor:"#7d1935" };
+      if (v.startsWith("köt") || v.startsWith("kot") || v.startsWith("bad") || v.startsWith("poor")) return { color:"#e74c3c", fillColor:"#e74c3c" };
+      if (v.startsWith("ort") || v.startsWith("med") || v.startsWith("fair")) return { color:"#f39c12", fillColor:"#f39c12" };
+      if (v.startsWith("iyi") || v.startsWith("goo")) return { color:"#2ecc71", fillColor:"#2ecc71" };
+      return { color:"#3388ff", fillColor:"#3388ff" };
+    }
 
-        // Kondisyona göre renk (daire marker için)
-        function conditionStyle(k) {
-            const v = norm(k);
-            if (v.startsWith("acil")) return { color: "#7d1935", fillColor: "#7d1935" };
-            if (v.startsWith("köt") || v.startsWith("kot")) return { color: "#e74c3c", fillColor: "#e74c3c" };
-            if (v.startsWith("ort")) return { color: "#f39c12", fillColor: "#f39c12" };
-            if (v.startsWith("iyi") || v.startsWith("good")) return { color: "#2ecc71", fillColor: "#2ecc71" };
-            // İngilizce olasılıkları
-            if (v.startsWith("urgent")) return { color: "#7d1935", fillColor: "#7d1935" };
-            if (v.startsWith("bad") || v.startsWith("poor")) return { color: "#e74c3c", fillColor: "#e74c3c" };
-            if (v.startsWith("medium") || v.startsWith("fair")) return { color: "#f39c12", fillColor: "#f39c12" };
-            return { color: "#3388ff", fillColor: "#3388ff" };
-        }
+    const COLS = {
+      bina:  ["bina adı","bina_adi","bina","ad","isim","name","building","building name"],
+      kosul: ["kondisyon","durum","condition","status"],
+      not:   ["notlar","açıklama","aciklama","notes","description"],
+      foto:  ["fotoğraf linki","fotograf linki","foto","fotoğraf","image","photo","photo url","image url"],
+      konum: ["konum (lat,lng)","konum","koordinat","lat,lng","location","coordinates","latlon","lat,lon"]
+    };
+    function findColIndex(headers, candidates) {
+      for (const c of candidates) {
+        const i = headers.findIndex(h => norm(h) === norm(c));
+        if (i !== -1) return i;
+      }
+      return -1;
+    }
 
-        // Esnek başlık eşleştirme
-        const COLS = {
-            bina: ["bina adı", "bina_adi", "bina", "ad", "isim", "name", "building", "building name"],
-            kosul: ["kondisyon", "durum", "condition", "status"],
-            not: ["notlar", "açıklama", "aciklama", "notes", "description"],
-            foto: ["fotoğraf linki", "fotograf linki", "foto", "fotoğraf", "image", "photo", "photo url", "image url"],
-            konum: ["konum (lat,lng)", "konum", "koordinat", "lat,lng", "location", "coordinates", "latlon", "lat,lon"]
+    // --- Drive yardımcıları ---
+    function extractDriveFileId(url){
+      if (!url) return null;
+      let m = url.match(/\/file\/d\/([a-zA-Z0-9_-]{10,})/); if (m) return m[1];
+      m = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);         if (m) return m[1];
+      m = url.match(/\/uc\?.*id=([a-zA-Z0-9_-]{10,})/);     if (m) return m[1];
+      return null;
+    }
+    function buildDriveImgHtmlFromId(id) {
+      const primary = `https://drive.google.com/uc?export=view&id=${id}`;
+      const fallback = `https://drive.google.com/thumbnail?id=${id}&sz=s1200`;
+      // primary açılmazsa otomatik fallback
+      return `<img src="${primary}" onerror="this.onerror=null;this.src='${fallback}'" alt="Fotoğraf">`;
+    }
+    function isDriveFolderLink(url){ return /drive\.google\.com\/drive\/folders\//.test(url || ""); }
+    function extractFolderId(url){ const m = (url||"").match(/drive\.google\.com\/drive\/folders\/([a-zA-Z0-9_-]+)/); return m ? m[1] : null; }
+    function isDirectImage(url){ return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(url || ""); }
+    function isGooglePhotosPage(url){ return /photos\.google\.com/.test(url || ""); }
+
+    // --- Klasör API (Apps Script) ---
+    async function getFirstImageFromFolder(folderId) {
+      if (!FOLDER_API_URL || !folderId) return { url:null, debug:"no-api-or-id" };
+      try {
+        const r = await fetch(`${FOLDER_API_URL}?folder=${encodeURIComponent(folderId)}`);
+        const t = await r.text();
+        console.log("Folder API raw:", t.slice(0,200));
+        let j; try { j = JSON.parse(t); } catch { return { url:null, debug:"json-parse-failed" }; }
+        if (j.error) return { url:null, debug:"api-error: "+j.error };
+        if (Array.isArray(j.images) && j.images.length) return { url: j.images[0].url || j.images[0].thumb, debug:"ok" };
+        return { url:null, debug:"no-images" };
+      } catch(e) { return { url:null, debug:"fetch-failed" }; }
+    }
+
+    /*************** 3) SHEET → GVIZ ***************/
+    const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${GID}`;
+    function parseGViz(raw) {
+      const start = raw.indexOf("{"); const end = raw.lastIndexOf("}");
+      if (start === -1 || end === -1) throw new Error("GViz JSON yok (paylaşım kapalı olabilir).");
+      return JSON.parse(raw.substring(start, end + 1));
+    }
+    async function fetchRows() {
+      const res = await fetch(GVIZ_URL);
+      const text = await res.text();
+      console.log("GViz ilk 160:", text.slice(0,160));
+      if (text.includes('"status":"error"') && text.includes('"access_denied"')) {
+        throw new Error("Erişim reddedildi. Sheet paylaşımını 'Bağlantıya sahip olan: Görüntüleyici' yapın.");
+      }
+      const data = parseGViz(text);
+      const rows = data.table.rows || [];
+      let headers = (data.table.cols || []).map(c => c.label || "");
+      let startRow = 0;
+      const hasHeader = headers.some(h => (h||"").trim() !== "");
+      if (!hasHeader && rows.length) { headers = rows[0].c.map(c => (c?.v ?? c?.f ?? "").toString()); startRow = 1; }
+      return { headers, rows, startRow };
+    }
+
+    /*************** 4) YÜKLE & ÇİZ ***************/
+    async function loadData() {
+      try {
+        statusEl.textContent = "Yükleniyor...";
+        layerGroup.clearLayers();
+
+        const { headers, rows, startRow } = await fetchRows();
+        if (!rows.length) { statusEl.textContent = "Boş veri"; alert("Sheet boş görünüyor."); return; }
+
+        const idx = {
+          bina:  findColIndex(headers, COLS.bina),
+          kosul: findColIndex(headers, COLS.kosul),
+          not:   findColIndex(headers, COLS.not),
+          foto:  findColIndex(headers, COLS.foto),
+          konum: findColIndex(headers, COLS.konum)
         };
-        function findColIndex(headers, candidates) {
-            for (const c of candidates) {
-                const i = headers.findIndex(h => norm(h) === norm(c));
-                if (i !== -1) return i;
-            }
-            return -1;
-        }
+        if (idx.konum === -1) { statusEl.textContent = "Hatalı başlık"; alert("Konum sütunu bulunamadı."); return; }
 
-        /****************** 4) SHEET'TEN VERİYİ ÇEK ******************/
-        // gviz endpoint (paylaşım: Bağlantıya sahip olan - Görüntüleyici olmalı!)
-        const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?gid=${GID}`;
+        const getCell = (row, i) => {
+          if (i < 0) return "";
+          const c = row.c[i];
+          return (c && (c.f ?? c.v)) ? (c.f ?? c.v).toString() : "";
+        };
 
-        function parseGViz(raw) {
-            const start = raw.indexOf("{");
-            const end = raw.lastIndexOf("}");
-            if (start === -1 || end === -1) {
-                // ACCESS_DENIED vb. metinler döndüğünde böyle olur
-                throw new Error("GViz JSON bulunamadı. Sheet paylaşımı kapalı olabilir.");
-            }
-            return JSON.parse(raw.substring(start, end + 1));
-        }
+        const bounds = L.latLngBounds([]);
+        let count = 0;
 
-        let layerGroup = L.layerGroup().addTo(map); // tekrar yüklemede temizlemek için
+        for (let r = startRow; r < rows.length; r++) {
+          const row = rows[r];
+          const loc = getCell(row, idx.konum); if (!loc) continue;
 
-        async function loadData() {
-            try {
-                statusEl.textContent = "Yükleniyor...";
-                // Temizle
-                layerGroup.clearLayers();
+          const parts = loc.split(",").map(s => s.trim());
+          if (parts.length < 2) continue;
+          const lat = parseFloat((parts[0] || "").replace(",", "."));
+          const lng = parseFloat((parts[1] || "").replace(",", "."));
+          if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
 
-                // Veriyi çek
-                const res = await fetch(GVIZ_URL);
-                const text = await res.text();
+          const bina  = getCell(row, idx.bina);
+          const kosul = getCell(row, idx.kosul);
+          const note  = getCell(row, idx.not);
+          let   foto  = (getCell(row, idx.foto) || "").trim();
 
-                // Hızlı teşhis için ilk 120 karakteri konsola yaz
-                console.log("GViz ilk 120:", text.slice(0, 120));
+          // --- Popup metin gövdesi ---
+          const coreHtml = `
+            <b>Bina:</b> ${bina || "-"}<br>
+            <b>Kondisyon:</b> ${kosul || "-"}<br>
+            <b>Notlar:</b> ${note || "-"}
+          `;
 
-                // ACCESS_DENIED ise kullanıcıya net uyarı
-                if (text.includes('"status":"error"') && text.includes('"access_denied"')) {
-                    throw new Error("Erişim reddedildi. Sheet paylaşımını 'Bağlantıya sahip olan: Görüntüleyici' yapın.");
-                }
+          // --- Fotoğraf bölümü (Drive dosya linkinde otomatik fallback) ---
+          let fotoHtml = "";
+          let needsFolderFetch = false;
+          let folderId = null;
 
-                const data = parseGViz(text);
-                const rows = data.table.rows || [];
-                const headers = (data.table.cols || []).map(c => c.label || "");
-                if (!rows.length) {
-                    alert("Sheet boş görünüyor veya satır bulunamadı.");
-                    statusEl.textContent = "Boş veri";
-                    return;
-                }
-
-                const idx = {
-                    bina: findColIndex(headers, COLS.bina),
-                    kosul: findColIndex(headers, COLS.kosul),
-                    not: findColIndex(headers, COLS.not),
-                    foto: findColIndex(headers, COLS.foto),
-                    konum: findColIndex(headers, COLS.konum)
-                };
-                if (idx.konum === -1) {
-                    alert("Konum sütunu bulunamadı. Bir sütunu 'Konum (Lat,Lng)' biçiminde adlandırın.");
-                    statusEl.textContent = "Hatalı başlık";
-                    return;
-                }
-
-                const bounds = L.latLngBounds([]);
-                let count = 0;
-
-                // Hücre okuma yardımcı
-                const cell = (r, i) => {
-                    if (i < 0) return "";
-                    const c = r.c[i];
-                    // .v (ham), .f (formatlı) olabilir
-                    return (c && (c.f ?? c.v)) ? (c.f ?? c.v).toString() : "";
-                };
-
-                rows.forEach((r) => {
-                    const loc = cell(r, idx.konum);
-                    if (!loc) return;
-
-                    // "lat, lng" bekleniyor
-                    const parts = loc.split(",").map(s => s.trim());
-                    if (parts.length < 2) return;
-
-                    const lat = parseFloat((parts[0] || "").replace(",", "."));
-                    const lng = parseFloat((parts[1] || "").replace(",", "."));
-                    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-
-                    const bina = cell(r, idx.bina);
-                    const kosul = cell(r, idx.kosul);
-                    const note = cell(r, idx.not);
-                    let foto = cell(r, idx.foto);
-
-                    // "foto yok" yazarsa gösterme
-                    if (norm(foto).includes("foto yok") || norm(foto) === "yok") foto = "";
-
-                    let fotoHtml = "";
-                    if (foto) {
-                        if (isDriveFolderLink(foto)) {
-                            fotoHtml = `<div style="margin-top:8px"><a href="${foto}" target="_blank" rel="noopener">Klasördeki foto(lar)ı aç</a></div>`;
-                        } else {
-                            const imgUrl = normalizeDriveUrl(foto);
-                            fotoHtml = `<img src="${imgUrl}" alt="Fotoğraf">`;
-                        }
-                    }
-
-                    const popupHtml = `
-                <b>Bina:</b> ${bina || "-"}<br>
-                <b>Kondisyon:</b> ${kosul || "-"}<br>
-                <b>Notlar:</b> ${note || "-"}
-                ${fotoHtml}
-              `;
-
-                    // Daire marker (renk kondisyona göre)
-                    const style = conditionStyle(kosul);
-                    const m = L.circleMarker([lat, lng], {
-                        radius: 7, weight: 1.5, color: style.color, fillColor: style.fillColor, fillOpacity: 0.85
-                    }).bindPopup(popupHtml);
-
-                    m.addTo(layerGroup);
-                    bounds.extend([lat, lng]);
-                    count++;
-                });
-
-                if (count > 0) {
-                    map.fitBounds(bounds, { padding: [24, 24] });
-                    statusEl.textContent = `${count} kayıt yüklendi`;
+          if (foto && !/^(yok|foto yok)$/i.test(foto)) {
+            if (isDriveFolderLink(foto)) {
+              folderId = extractFolderId(foto);
+              fotoHtml = `<div style="margin-top:8px">
+                <a href="${foto}" target="_blank" rel="noopener">Klasörü aç</a><br>
+                <em>Önizleme yükleniyor...</em>
+              </div>`;
+              needsFolderFetch = !!folderId;
+            } else if (isGooglePhotosPage(foto)) {
+              fotoHtml = `<div class="small" style="margin-top:8px">
+                Bu bir Google Photos sayfa linki. Fotoğrafı açıp <b>Resmi yeni sekmede aç</b> ile
+                <code>lh3.googleusercontent.com</code> başlayan doğrudan resim adresini kullanın.
+              </div>`;
+            } else {
+              // Doğrudan görsel mi?
+              if (isDirectImage(foto)) {
+                fotoHtml = `<img src="${foto}" alt="Fotoğraf">`;
+              } else {
+                // Drive dosya linkinden ID çıkar → primary + thumbnail fallback
+                const fileId = extractDriveFileId(foto);
+                if (fileId) {
+                  fotoHtml = buildDriveImgHtmlFromId(fileId);
                 } else {
-                    statusEl.textContent = "Geçerli konum bulunamadı";
-                    alert("Veri geldi ama geçerli 'Konum (Lat,Lng)' satırı tespit edilemedi. Hücre biçimini kontrol edin.");
+                  // Tanınmayan link: yine de tıklanabilir bırak
+                  fotoHtml = `<div class="small" style="margin-top:8px"><a href="${foto}" target="_blank" rel="noopener">Bağlantıyı aç</a></div>`;
                 }
-            } catch (err) {
-                console.error(err);
-                statusEl.textContent = "Hata";
-                alert("Sheet verisi alınamadı: " + err.message);
+              }
             }
+          }
+
+          // --- Marker ve ilk popup ---
+          const style = conditionStyle(kosul);
+          const marker = L.circleMarker([lat, lng], {
+            radius: 7, weight: 1.5, color: style.color, fillColor: style.fillColor, fillOpacity: 0.85
+          }).addTo(layerGroup);
+
+          marker.bindPopup(coreHtml + fotoHtml);
+          bounds.extend([lat, lng]);
+          count++;
+
+          // --- Klasörse: Apps Script'ten ilk görseli çek → popup'ı güncelle ---
+          if (needsFolderFetch && folderId) {
+            getFirstImageFromFolder(folderId).then(res => {
+              if (res.url) {
+                marker.setPopupContent(coreHtml + `<img src="${res.url}" alt="Fotoğraf">`);
+              } else {
+                marker.setPopupContent(coreHtml + `<div style="margin-top:8px">
+                  <a href="${foto}" target="_blank" rel="noopener">Klasörü aç</a><br>
+                  <em>Önizleme bulunamadı (${res.debug || "-"})</em>
+                </div>`);
+              }
+            }).catch(() => {
+              marker.setPopupContent(coreHtml + `<div style="margin-top:8px">
+                <a href="${foto}" target="_blank" rel="noopener">Klasörü aç</a><br>
+                <em>Önizleme alınamadı</em>
+              </div>`);
+            });
+          }
         }
 
-        refreshBtn.addEventListener('click', loadData);
+        if (count > 0) { map.fitBounds(bounds, { padding: [24,24] }); statusEl.textContent = `${count} kayıt yüklendi`; }
+        else { statusEl.textContent = "Geçerli konum yok"; alert("Geçerli 'Konum (Lat,Lng)' satırı bulunamadı."); }
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Hata";
+        alert("Yükleme hatası: " + err.message);
+      }
+    }
 
-        // İlk yükleme
-        loadData();
-    </script>
+    refreshBtn.addEventListener('click', loadData);
+    loadData();
+  </script>
 </body>
 </html>
